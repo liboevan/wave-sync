@@ -603,25 +603,15 @@ function Export-WaveDb {
 
     $sqliteFlags = Get-NodeSqliteFlags $nodePath
     Write-Info "Exporting workspace from DB..."
-    if ($sqliteFlags.Count -gt 0) {
-        & $nodePath --no-warnings $sqliteFlags[0] $exportScript $dbPath $exportDir 2>&1 | ForEach-Object { Write-Dim "  $_" }
+    $output = if ($sqliteFlags.Count -gt 0) {
+        & $nodePath --no-warnings $sqliteFlags[0] $exportScript $dbPath $exportDir 2>&1
     } else {
-        & $nodePath $exportScript $dbPath $exportDir 2>&1 | ForEach-Object { Write-Dim "  $_" }
+        & $nodePath $exportScript $dbPath $exportDir 2>&1
     }
-    if ($LASTEXITCODE -ne 0) {
-
-    # Check for locked DB
-    if ($LASTEXITCODE -ne 0) {
-        foreach ($line in $result) {
-            if ($line -match "cannot open DB|locked|SQLITE_CANTOPEN") {
-                Write-Warn "waveterm.db 被 Wave Terminal 锁定"
-                Write-Dim "请先关闭 Wave Terminal，再重试 push"
-                Write-Dim "或手动导出后上传:"
-                Write-Dim "  node --experimental-sqlite export_db.js `"$dbPath`" `"$exportDir`""
-                return $false
-            }
-        }
-        Write-Warn "DB 导出失败"
+    $ec = $LASTEXITCODE
+    $output | ForEach-Object { if ($_) { Write-Dim "  $_" } }
+    if ($ec -ne 0) {
+        Write-Warn "DB 导出失败（Wave Terminal 正在运行? 请先关闭）"
         return $false
     }
     return $true
@@ -647,11 +637,12 @@ function Import-WaveDb {
 
     $sqliteFlags = Get-NodeSqliteFlags $nodePath
     Write-Info "Importing workspace to DB..."
-    if ($sqliteFlags.Count -gt 0) {
-        & $nodePath --no-warnings $sqliteFlags[0] $importScript $dbPath $exportDir 2>&1 | ForEach-Object { Write-Dim "  $_" }
+    $output = if ($sqliteFlags.Count -gt 0) {
+        & $nodePath --no-warnings $sqliteFlags[0] $importScript $dbPath $exportDir 2>&1
     } else {
-        & $nodePath $importScript $dbPath $exportDir 2>&1 | ForEach-Object { Write-Dim "  $_" }
+        & $nodePath $importScript $dbPath $exportDir 2>&1
     }
+    $output | ForEach-Object { if ($_) { Write-Dim "  $_" } }
 }
 
 # ── Sync Meta ───────────────────────────────────────────────────────────────
