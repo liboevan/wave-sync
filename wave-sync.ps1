@@ -601,17 +601,15 @@ function Export-WaveDb {
     if (-not $scriptDir) { $scriptDir = $PSScriptRoot }
     $exportScript = Join-Path $scriptDir "export_db.js"
 
-    $sqliteFlags = Get-NodeSqliteFlags $nodePath
-    Write-Info "Exporting workspace from DB..."
-    $output = if ($sqliteFlags.Count -gt 0) {
-        & $nodePath --no-warnings $sqliteFlags[0] $exportScript $dbPath $exportDir 2>&1
-    } else {
-        & $nodePath $exportScript $dbPath $exportDir 2>&1
+    if (-not (Test-Path $exportScript)) {
+        Write-Warn "export_db.js not found at: $exportScript"
+        return $false
     }
-    $ec = $LASTEXITCODE
-    $output | ForEach-Object { if ($_) { Write-Dim "  $_" } }
-    if ($ec -ne 0) {
-        Write-Warn "DB 导出失败（Wave Terminal 正在运行? 请先关闭）"
+
+    Write-Info "Exporting workspace from DB..."
+    & $nodePath --no-warnings --experimental-sqlite $exportScript $dbPath $exportDir
+    if ($LASTEXITCODE -ne 0) {
+        Write-Warn "DB 导出失败 (exit $LASTEXITCODE)"
         return $false
     }
     return $true
@@ -635,14 +633,8 @@ function Import-WaveDb {
     if (-not $scriptDir) { $scriptDir = $PSScriptRoot }
     $importScript = Join-Path $scriptDir "import_db.js"
 
-    $sqliteFlags = Get-NodeSqliteFlags $nodePath
     Write-Info "Importing workspace to DB..."
-    $output = if ($sqliteFlags.Count -gt 0) {
-        & $nodePath --no-warnings $sqliteFlags[0] $importScript $dbPath $exportDir 2>&1
-    } else {
-        & $nodePath $importScript $dbPath $exportDir 2>&1
-    }
-    $output | ForEach-Object { if ($_) { Write-Dim "  $_" } }
+    & $nodePath --no-warnings --experimental-sqlite $importScript $dbPath $exportDir
 }
 
 # ── Sync Meta ───────────────────────────────────────────────────────────────
