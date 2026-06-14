@@ -1,0 +1,19 @@
+# wave-sync configuration
+# 复制此文件到 ~/.config/wave-sync/config.yaml 并填入你的配置
+
+webdav:
+  # 坚果云 (Jianguo Cloud / Nutstore) - 国内首选
+  # 获取应用密码: 坚果云 → 账户信息 → 安全选项 → 第三方应用管理 → 添加应用密码
+  url: "https://dav.jianguoyun.com/dav/wave-sync"
+  user: "your@email.com"
+  password: ""  # 应用密码（非登录密码），留空则运行时交互输入
+
+  # Nextcloud 示例
+  # url: "https://cloud.example.com/remote.php/dav/files/user/wave-sync"
+  # user: "username"
+  # password: "password"
+
+  # Synology Drive 示例
+  # url: "https://nas.example.com:5006/dav/wave-sync"
+  # user: "username"
+  # password: "password"

@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+*.pyo
+config.yaml
+.wave-sync-meta.json
+.wave-sync-manifest.json
