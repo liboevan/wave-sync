@@ -52,6 +52,7 @@ $Script:SYNC_EXCLUDE = @(
     ".wave-sync-meta.json"
     ".wave-sync-manifest.json"
     "*.log", "*.log.*", "*.tmp", "*.bak", "*.sock", "*.pid"
+    "*.db", "*.db-journal", "*.db-wal", "*.db-shm"
     "__pycache__"
     "Cache", "Code Cache", "GPUCache"
     "DawnGraphiteCache", "DawnWebGPUCache"
@@ -407,14 +408,18 @@ function Remove-WebDavFile {
 
 function Compute-FileHash256 {
     param([string]$FilePath)
-    $hash = [System.Security.Cryptography.SHA256]::Create()
-    $stream = [System.IO.File]::OpenRead($FilePath)
     try {
-        $bytes = $hash.ComputeHash($stream)
-        return ($bytes | ForEach-Object { $_.ToString("x2") }) -join ""
-    } finally {
-        $stream.Close()
-        $hash.Dispose()
+        $hash = [System.Security.Cryptography.SHA256]::Create()
+        $stream = [System.IO.File]::Open($FilePath, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+        try {
+            $bytes = $hash.ComputeHash($stream)
+            return ($bytes | ForEach-Object { $_.ToString("x2") }) -join ""
+        } finally {
+            $stream.Close()
+            $hash.Dispose()
+        }
+    } catch {
+        return "locked"
     }
 }
 
@@ -451,10 +456,15 @@ function Build-Manifest {
     $manifest = @{ files = @{}; generated_at = (Get-Date -Format "o") }
     Get-SyncFiles $BaseDir | ForEach-Object {
         $rel = $_.FullName.Substring($BaseDir.Length + 1).Replace("\", "/")
-        $manifest["files"][$rel] = @{
-            hash  = Compute-FileHash256 $_.FullName
-            size  = $_.Length
-            mtime = $_.LastWriteTimeUtc.ToString("o")
+        $hash = Compute-FileHash256 $_.FullName
+        if ($hash -ne "locked") {
+            $manifest["files"][$rel] = @{
+                hash  = $hash
+                size  = $_.Length
+                mtime = $_.LastWriteTimeUtc.ToString("o")
+            }
+        } else {
+            Write-Dim "  [skip] $rel (locked)"
         }
     }
     return $manifest
