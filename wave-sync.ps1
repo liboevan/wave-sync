@@ -271,7 +271,7 @@ function Invoke-WebDavRequest {
         }
 
         if ($BodyBytes) {
-            if (-not $request.ContentType) { $request.ContentType = "application/octet-stream" }
+            $request.ContentType = "application/octet-stream"
             $request.ContentLength = $BodyBytes.Length
             $stream = $request.GetRequestStream()
             try { $stream.Write($BodyBytes, 0, $BodyBytes.Length) } finally { $stream.Close() }
@@ -281,9 +281,9 @@ function Invoke-WebDavRequest {
             $request.ContentLength = $bodyBytes.Length
             $stream = $request.GetRequestStream()
             try { $stream.Write($bodyBytes, 0, $bodyBytes.Length) } finally { $stream.Close() }
-        } else {
-            $request.ContentLength = 0
         }
+        # else: no body — don't set ContentType or ContentLength (some servers
+        # reject Content-Length: 0 on body-less PROPFIND)
 
         $response = $request.GetResponse()
         $reader = [System.IO.StreamReader]::new($response.GetResponseStream())
