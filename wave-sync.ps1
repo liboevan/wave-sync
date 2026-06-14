@@ -260,7 +260,6 @@ function Invoke-WebDavRequest {
         $request = [System.Net.WebRequest]::Create($fullUrl)
         $request.Method = $Method
         $request.Timeout = $TimeoutSec * 1000
-        $request.ContentType = "application/xml; charset=utf-8"
         $request.Headers.Add("Authorization", $Auth)
 
         foreach ($k in $Headers.Keys) {
@@ -272,10 +271,12 @@ function Invoke-WebDavRequest {
         }
 
         if ($BodyBytes) {
+            if (-not $request.ContentType) { $request.ContentType = "application/octet-stream" }
             $request.ContentLength = $BodyBytes.Length
             $stream = $request.GetRequestStream()
             try { $stream.Write($BodyBytes, 0, $BodyBytes.Length) } finally { $stream.Close() }
         } elseif ($Body) {
+            $request.ContentType = "application/xml; charset=utf-8"
             $bodyBytes = [System.Text.Encoding]::UTF8.GetBytes($Body)
             $request.ContentLength = $bodyBytes.Length
             $stream = $request.GetRequestStream()
