@@ -33,17 +33,25 @@ $Script:MANIFEST_FILENAME = ".wave-sync-manifest.json"
 $Script:WAVE_DIR_PATTERNS = @{
     "Windows" = @(
         "$env:APPDATA\waveterm"
+        "$env:APPDATA\waveterm\config"
         "$env:LOCALAPPDATA\waveterm"
+        "$env:LOCALAPPDATA\waveterm\config"
         "$env:USERPROFILE\.waveterm"
+        "$env:USERPROFILE\.waveterm\config"
     )
     "Darwin" = @(
         "$env:HOME/Library/Application Support/waveterm"
+        "$env:HOME/Library/Application Support/waveterm/config"
         "$env:HOME/.waveterm"
+        "$env:HOME/.waveterm/config"
     )
     "Linux" = @(
         "$env:XDG_CONFIG_HOME/waveterm"
+        "$env:XDG_CONFIG_HOME/waveterm/config"
         "$env:HOME/.waveterm"
+        "$env:HOME/.waveterm/config"
         "$env:HOME/.config/waveterm"
+        "$env:HOME/.config/waveterm/config"
     )
 }
 
@@ -100,8 +108,15 @@ function Find-WaveDir {
 
     foreach ($p in $patterns) {
         if ($p -and (Test-Path $p)) {
+            # Check for config/ subdir first (old Wave)
             $configDir = Join-Path $p "config"
             if (Test-Path $configDir) { return $configDir }
+            # Check if root has actual config files (new Wave)
+            if ((Test-Path (Join-Path $p "settings.json")) -or
+                (Test-Path (Join-Path $p "connections.json")) -or
+                (Test-Path (Join-Path $p "widgets.json"))) {
+                return $p
+            }
             return $p
         }
     }
@@ -110,6 +125,27 @@ function Find-WaveDir {
 
 function Get-MachineId {
     return $env:COMPUTERNAME
+}
+
+function Find-WaveConfigFiles {
+    # Search common locations for Wave config files
+    $searchPaths = @(
+        "$env:APPDATA\waveterm"
+        "$env:LOCALAPPDATA\waveterm"
+        "$env:USERPROFILE\.waveterm"
+    )
+    $configFiles = @("settings.json", "connections.json", "widgets.json")
+
+    foreach ($base in $searchPaths) {
+        if (-not (Test-Path $base)) { continue }
+        foreach ($f in $configFiles) {
+            $found = Get-ChildItem -Path $base -Recurse -Filter $f -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($found) {
+                return $found.DirectoryName
+            }
+        }
+    }
+    return $null
 }
 
 # ── Config ──────────────────────────────────────────────────────────────────
@@ -627,6 +663,20 @@ function Invoke-Push {
         exit 1
     }
 
+    # If no sync files found, try searching for Wave config files
+    if ((Get-SyncFiles $waveDir).Count -eq 0) {
+        Write-Warn "No syncable files in $waveDir"
+        $found = Find-WaveConfigFiles
+        if ($found) {
+            Write-Info "Found Wave config at: $found"
+            $waveDir = $found
+        } else {
+            Write-Err "Could not find Wave config files"
+            Write-Dim "Use -WaveDir to specify the path to your Wave config"
+            exit 1
+        }
+    }
+
     $webdav = Get-WebDavConfig -Override @{ url = $Url; user = $User; password = $Password }
     $auth = New-WebDavAuth -User $webdav.user -Password $webdav.password
     $baseUrl = $webdav.url
@@ -642,6 +692,8 @@ function Invoke-Push {
         $mark = if ($excluded) { "[skip]" } else { "[sync]" }
         Write-Dim "  $mark $rel"
     }
+    $syncCount = (Get-SyncFiles $waveDir).Count
+    Write-Dim "  Total syncable files: $syncCount"
 
     # Conflict detection
     $conflict = Detect-Conflict -BaseDir $waveDir -Direction "push"
