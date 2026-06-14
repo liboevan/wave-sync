@@ -760,8 +760,27 @@ function Invoke-Push {
 
     $totalOps = $newFiles.Count + $changed.Count + $deleted.Count
     if ($totalOps -eq 0 -and -not $Force) {
-        Write-Ok "所有文件已是最新状态，无需同步"
-        return
+        # Double-check: remote might be empty (first sync)
+        try {
+            $remoteCheck = Get-WebDavFileList -BaseUrl $baseUrl -BasePath "" -Auth $auth
+            $remoteCheck = $remoteCheck | Where-Object { -not $_.isDir -and $_.path }
+            if ($remoteCheck.Count -eq 0) {
+                Write-Dim "远程没有文件，首次同步将上传全部文件"
+                $newFiles = @()
+                $files | ForEach-Object {
+                    $rel = $_.FullName.Substring($waveDir.Length + 1).Replace("\", "/")
+                    $newFiles += $rel
+                }
+                $totalOps = $newFiles.Count
+            } else {
+                Write-Ok "所有文件已是最新状态，无需同步"
+                return
+            }
+        } catch {
+            # If PROPFIND fails, fall back to the local check
+            Write-Ok "所有文件已是最新状态，无需同步"
+            return
+        }
     }
 
     if ($newFiles.Count -gt 0) { Write-Info "新增: $($newFiles.Count) 个文件" }
