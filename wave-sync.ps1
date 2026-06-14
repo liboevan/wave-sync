@@ -217,43 +217,67 @@ function Invoke-WebDavRequest {
     $urlPath = $Path.TrimStart("/")
     $fullUrl = $BaseUrl.TrimEnd("/") + "/" + $urlPath
 
-    $reqHeaders = @{
-        "Authorization" = $Auth
-    }
-    foreach ($k in $Headers.Keys) {
-        $reqHeaders[$k] = $Headers[$k]
-    }
-
-    $params = @{
-        Uri             = $fullUrl
-        Method          = $Method
-        Headers         = $reqHeaders
-        TimeoutSec      = $TimeoutSec
-        UseBasicParsing = $true
-    }
-
-    if ($Body) {
-        $params["Body"] = [System.Text.Encoding]::UTF8.GetBytes($Body)
-        if (-not $Headers.ContainsKey("Content-Type")) {
-            $params["ContentType"] = "application/xml; charset=utf-8"
-        }
-    }
-
     try {
-        $response = Invoke-WebRequest @params
+        $request = [System.Net.WebRequest]::Create($fullUrl)
+        $request.Method = $Method
+        $request.Timeout = $TimeoutSec * 1000
+        $request.ContentType = "application/xml; charset=utf-8"
+
+        # Auth header
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes($Auth)
+        $request.Headers.Add("Authorization", $Auth)
+
+        # Custom headers
+        foreach ($k in $Headers.Keys) {
+            if ($k -eq "Content-Type") {
+                $request.ContentType = $Headers[$k]
+            } else {
+                $request.Headers.Add($k, $Headers[$k])
+            }
+        }
+
+        # Body
+        if ($Body) {
+            $bodyBytes = [System.Text.Encoding]::UTF8.GetBytes($Body)
+            $request.ContentLength = $bodyBytes.Length
+            $stream = $request.GetRequestStream()
+            try {
+                $stream.Write($bodyBytes, 0, $bodyBytes.Length)
+            } finally {
+                $stream.Close()
+            }
+        } else {
+            $request.ContentLength = 0
+        }
+
+        $response = $request.GetResponse()
+        $reader = [System.IO.StreamReader]::new($response.GetResponseStream())
+        $content = $reader.ReadToEnd()
+        $reader.Close()
+        $statusCode = [int]$response.StatusCode
+        $response.Close()
+
         return @{
-            Status  = $response.StatusCode
-            Content = $response.Content
-            Raw     = $response.RawContentStream
+            Status  = $statusCode
+            Content = $content
         }
     } catch {
         $statusCode = 0
         if ($_.Exception.Response) {
             $statusCode = [int]$_.Exception.Response.StatusCode
+            try {
+                $reader = [System.IO.StreamReader]::new($_.Exception.Response.GetResponseStream())
+                $content = $reader.ReadToEnd()
+                $reader.Close()
+            } catch {
+                $content = $_.Exception.Message
+            }
+        } else {
+            $content = $_.Exception.Message
         }
         return @{
             Status  = $statusCode
-            Content = $_.Exception.Message
+            Content = $content
             Error   = $true
         }
     }
