@@ -585,21 +585,25 @@ function Invoke-Push {
     if ($conflict) {
         Write-Warn $conflict
         if (-not $Force) {
-            $ans = Read-Host "继续上传? (y/N)"
+            $ans = Read-Host "Continue upload? (y/N)"
             if ($ans -ne "y") {
-                Write-Info "已取消"
+                Write-Info "Cancelled"
                 return
             }
         }
     }
 
     # Test connection
-    Write-Info "连接 WebDAV 服务器..."
-    if (-not (Test-WebDavConnection -BaseUrl $baseUrl -Auth $auth)) {
-        Write-Err "无法连接 WebDAV 服务器，请检查配置"
+    Write-Info "Connecting to WebDAV..."
+    Write-Dim "URL: $baseUrl"
+    $testResult = Invoke-WebDavRequest -Method "PROPFIND" -BaseUrl $baseUrl -Path "" -Auth $auth -Headers @{ "Depth" = "0" }
+    if ($testResult.Status -in @(200, 207)) {
+        Write-Ok "Connected"
+    } else {
+        Write-Err "Connection failed (HTTP $($testResult.Status))"
+        if ($testResult.Content) { Write-Dim "$($testResult.Content.Substring(0, [Math]::Min(200, $testResult.Content.Length)))" }
         exit 1
     }
-    Write-Ok "连接成功"
 
     # Get local files
     $files = Get-SyncFiles $waveDir
@@ -701,21 +705,25 @@ function Invoke-Pull {
     if ($conflict) {
         Write-Warn $conflict
         if (-not $Force) {
-            $ans = Read-Host "继续拉取? (y/N)"
+            $ans = Read-Host "Continue pull? (y/N)"
             if ($ans -ne "y") {
-                Write-Info "已取消"
+                Write-Info "Cancelled"
                 return
             }
         }
     }
 
     # Test connection
-    Write-Info "连接 WebDAV 服务器..."
-    if (-not (Test-WebDavConnection -BaseUrl $baseUrl -Auth $auth)) {
-        Write-Err "无法连接 WebDAV 服务器，请检查配置"
+    Write-Info "Connecting to WebDAV..."
+    Write-Dim "URL: $baseUrl"
+    $testResult = Invoke-WebDavRequest -Method "PROPFIND" -BaseUrl $baseUrl -Path "" -Auth $auth -Headers @{ "Depth" = "0" }
+    if ($testResult.Status -in @(200, 207)) {
+        Write-Ok "Connected"
+    } else {
+        Write-Err "Connection failed (HTTP $($testResult.Status))"
+        if ($testResult.Content) { Write-Dim "$($testResult.Content.Substring(0, [Math]::Min(200, $testResult.Content.Length)))" }
         exit 1
     }
-    Write-Ok "连接成功"
 
     # List remote files
     Write-Info "获取远程文件列表..."
