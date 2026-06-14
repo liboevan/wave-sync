@@ -758,17 +758,22 @@ function Invoke-Push {
         exit 1
     }
 
-    # If no sync files found, try searching for Wave config files
+    # If no sync files found, check DB (Wave 0.14+ stores config in SQLite)
     if ((Get-SyncFiles $waveDir).Count -eq 0) {
-        Write-Warn "No syncable files in $waveDir"
-        $found = Find-WaveConfigFiles
-        if ($found) {
-            Write-Info "Found Wave config at: $found"
-            $waveDir = $found
+        $dbPath = Join-Path $waveDir "Data\db\waveterm.db"
+        if (Test-Path $dbPath) {
+            Write-Dim "Using DB workspace export (Wave 0.14+ SQLite storage)"
         } else {
-            Write-Err "Could not find Wave config files"
-            Write-Dim "Use -WaveDir to specify the path to your Wave config"
-            exit 1
+            Write-Warn "No syncable files in $waveDir"
+            $found = Find-WaveConfigFiles
+            if ($found) {
+                Write-Info "Found Wave config at: $found"
+                $waveDir = $found
+            } else {
+                Write-Err "Could not find Wave config files"
+                Write-Dim "Use -WaveDir to specify the path to your Wave config"
+                exit 1
+            }
         }
     }
 
@@ -815,72 +820,56 @@ function Invoke-Push {
         exit 1
     }
 
-    # Get local files
-    $files = Get-SyncFiles $waveDir
-    Write-Info "找到 $($files.Count) 个文件"
+    # Export DB to JSON first (Wave 0.14+ SQLite storage)
+    $dbExported = Export-WaveDb -WaveDir $waveDir
+    $exportFiles = @()
 
-    # Build current manifest
+    # Get regular config files
+    $files = Get-SyncFiles $waveDir
+    if ($files.Count -gt 0) { Write-Info "找到 $($files.Count) 个配置文件" }
+    if ($dbExported) {
+        $exportDir = Get-ExportDir $waveDir
+        $exportFiles = Get-ChildItem -Path $exportDir -Filter "*.json" -File
+        Write-Info "DB workspace 导出: $($exportFiles.Count) 个文件"
+    }
+
+    # Build manifest
     $currentManifest = Build-Manifest $waveDir
     $oldManifest = Load-Manifest $waveDir
 
-    # Find changes
-    $newFiles = @()
-    $changed = @()
+    # Find changes in regular files
+    $newFiles = @(); $changed = @()
     foreach ($f in $files) {
         $rel = $f.FullName.Substring($waveDir.Length + 1).Replace("\", "/")
         $currentHash = $currentManifest.files.$rel.hash
         $oldHash = if ($oldManifest.files.$rel) { $oldManifest.files.$rel.hash } else { $null }
-        if (-not $oldHash) {
-            $newFiles += $rel
-        } elseif ($oldHash -ne $currentHash) {
-            $changed += $rel
-        }
+        if (-not $oldHash) { $newFiles += $rel }
+        elseif ($oldHash -ne $currentHash) { $changed += $rel }
     }
-
     $deleted = @()
     foreach ($rel in $oldManifest.files.Keys) {
-        if (-not $currentManifest.files[$rel]) {
-            $deleted += $rel
-        }
+        if (-not $currentManifest.files[$rel]) { $deleted += $rel }
     }
 
     $totalOps = $newFiles.Count + $changed.Count + $deleted.Count
-    if ($totalOps -eq 0 -and -not $Force) {
-        # Double-check: remote might be empty (first sync)
-        try {
-            $remoteCheck = Get-WebDavFileList -BaseUrl $baseUrl -BasePath "" -Auth $auth
-            $remoteCheck = $remoteCheck | Where-Object { -not $_.isDir -and $_.path }
-            if ($remoteCheck.Count -eq 0) {
-                Write-Dim "远程没有文件，首次同步将上传全部文件"
-                $newFiles = @()
-                $files | ForEach-Object {
-                    $rel = $_.FullName.Substring($waveDir.Length + 1).Replace("\", "/")
-                    $newFiles += $rel
-                }
-                $totalOps = $newFiles.Count
-            } else {
-                Write-Ok "所有文件已是最新状态，无需同步"
-                return
-            }
-        } catch {
-            # If PROPFIND fails, fall back to the local check
-            Write-Ok "所有文件已是最新状态，无需同步"
-            return
-        }
+    $totalUploads = $totalOps + ($exportFiles.Count)
+
+    if ($totalUploads -eq 0 -and -not $dbExported -and -not $Force) {
+        Write-Ok "没有需要同步的内容"
+        return
     }
+
+    if ($Force) { $totalUploads = ($files.Count) + ($exportFiles.Count) }
 
     if ($newFiles.Count -gt 0) { Write-Info "新增: $($newFiles.Count) 个文件" }
     if ($changed.Count -gt 0) { Write-Info "修改: $($changed.Count) 个文件" }
     if ($deleted.Count -gt 0) { Write-Info "删除: $($deleted.Count) 个文件" }
 
-    # Export DB to JSON
-    $dbExported = Export-WaveDb -WaveDir $waveDir
-
     # Upload regular files
     $success = 0; $fail = 0
     foreach ($f in $files) {
         $rel = $f.FullName.Substring($waveDir.Length + 1).Replace("\", "/")
-        $status = if ($rel -in $newFiles) { "新" } elseif ($rel -in $changed) { "改" } else { "=" }
+        $status = if ($rel -in $newFiles -or $Force) { "新" } elseif ($rel -in $changed) { "改" } else { "=" }
         Write-Dim "  [$status] $rel"
         try {
             Upload-WebDavFile -BaseUrl $baseUrl -RemotePath $rel -LocalPath $f.FullName -Auth $auth | Out-Null
@@ -891,18 +880,14 @@ function Invoke-Push {
         }
     }
 
-    # Delete remote files
+    # Delete remote files (only if there are regular files to manage)
     foreach ($rel in $deleted) {
         Write-Dim "  [删] $rel"
-        try {
-            Remove-WebDavFile -BaseUrl $baseUrl -RemotePath $rel -Auth $auth | Out-Null
-        } catch { }
+        try { Remove-WebDavFile -BaseUrl $baseUrl -RemotePath $rel -Auth $auth | Out-Null } catch { }
     }
 
     # Upload DB export files
     if ($dbExported) {
-        $exportDir = Get-ExportDir $waveDir
-        $exportFiles = Get-ChildItem -Path $exportDir -Filter "*.json" -File
         $exportOk = 0; $exportFail = 0
         foreach ($ef in $exportFiles) {
             $rel = "wave-sync-export/$($ef.Name)"
@@ -917,6 +902,7 @@ function Invoke-Push {
         }
         if ($exportOk -gt 0) { Write-Info "DB workspace 导出上传: $exportOk 个文件" }
         $success += $exportOk
+        $fail += $exportFail
     }
 
     # Save manifest
