@@ -322,20 +322,8 @@ function Get-WebDavFileList {
         [string]$Auth
     )
 
-    $body = @"
-<?xml version="1.0" encoding="utf-8"?>
-<D:propfind xmlns:D="DAV:">
-  <D:prop>
-    <D:displayname/>
-    <D:getlastmodified/>
-    <D:getcontentlength/>
-    <D:etag/>
-    <D:resourcetype/>
-  </D:prop>
-</D:propfind>
-"@
-
-    $result = Invoke-WebDavRequest -Method "PROPFIND" -BaseUrl $BaseUrl -Path $BasePath -Auth $Auth -Body $body -Headers @{ "Depth" = "1" }
+    # PROPFIND without body (some servers reject XML body with Depth=1)
+    $result = Invoke-WebDavRequest -Method "PROPFIND" -BaseUrl $BaseUrl -Path $BasePath -Auth $Auth -Headers @{ "Depth" = "1" }
     if ($result.Status -notin @(200, 207)) {
         throw "PROPFIND failed: $($result.Status)"
     }
