@@ -51,7 +51,7 @@ $Script:WAVE_DIR_PATTERNS = @{
 $Script:SYNC_EXCLUDE = @(
     ".wave-sync-meta.json"
     ".wave-sync-manifest.json"
-    "*.log", "*.log.*", "*.tmp", "*.bak", "*.sock", "*.pid"
+    "*.log", "*.log.*", "*.tmp", "*.bak", "*.sock", "*.pid", "*.lock"
     "*.db", "*.db-journal", "*.db-wal", "*.db-shm"
     "__pycache__"
     "Cache", "Code Cache", "GPUCache"
@@ -475,7 +475,21 @@ function Load-Manifest {
     $path = Join-Path $BaseDir $Script:MANIFEST_FILENAME
     if (Test-Path $path) {
         try {
-            return (Get-Content $path -Raw -Encoding UTF8 | ConvertFrom-Json)
+            $obj = Get-Content $path -Raw -Encoding UTF8 | ConvertFrom-Json
+            # Convert PSCustomObject to hashtable for reliable iteration
+            $files = @{}
+            if ($obj.files) {
+                foreach ($prop in $obj.files.PSObject.Properties) {
+                    if ($prop.Value.hash) {
+                        $files[$prop.Name] = @{
+                            hash  = $prop.Value.hash
+                            size  = $prop.Value.size
+                            mtime = $prop.Value.mtime
+                        }
+                    }
+                }
+            }
+            return @{ files = $files; generated_at = $obj.generated_at }
         } catch { }
     }
     return @{ files = @{} }
@@ -494,7 +508,12 @@ function Load-SyncMeta {
     $path = Join-Path $BaseDir $Script:META_FILENAME
     if (Test-Path $path) {
         try {
-            return (Get-Content $path -Raw -Encoding UTF8 | ConvertFrom-Json)
+            $obj = Get-Content $path -Raw -Encoding UTF8 | ConvertFrom-Json
+            return @{
+                lastSync  = $obj.lastSync
+                direction = $obj.direction
+                machineId = $obj.machineId
+            }
         } catch { }
     }
     return @{
