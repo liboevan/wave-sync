@@ -622,8 +622,8 @@ webdav:
 function Invoke-Push {
     $waveDir = Find-WaveDir -OverrideDir $WaveDir
     if (-not $waveDir) {
-        Write-Err "未找到 Wave Terminal 配置目录"
-        Write-Dim "请使用 -WaveDir 参数指定路径"
+        Write-Err "Wave Terminal config directory not found"
+        Write-Dim "Use -WaveDir to specify path"
         exit 1
     }
 
@@ -633,6 +633,15 @@ function Invoke-Push {
 
     Write-Info "Wave config: $waveDir"
     Write-Info "Machine: $(Get-MachineId)"
+
+    # Debug: show directory contents
+    Write-Dim "Contents:"
+    Get-ChildItem $waveDir -Recurse -File -ErrorAction SilentlyContinue | Select-Object -First 20 | ForEach-Object {
+        $rel = $_.FullName.Substring($waveDir.Length + 1)
+        $excluded = Test-SyncExclude ($rel.Replace("\", "/"))
+        $mark = if ($excluded) { "[skip]" } else { "[sync]" }
+        Write-Dim "  $mark $rel"
+    }
 
     # Conflict detection
     $conflict = Detect-Conflict -BaseDir $waveDir -Direction "push"
@@ -682,8 +691,8 @@ function Invoke-Push {
     }
 
     $deleted = @()
-    foreach ($rel in $oldManifest.files.PSObject.Properties.Name) {
-        if (-not $currentManifest.files.$rel) {
+    foreach ($rel in $oldManifest.files.Keys) {
+        if (-not $currentManifest.files[$rel]) {
             $deleted += $rel
         }
     }
@@ -898,7 +907,7 @@ function Invoke-Status {
             $rel = $_.FullName.Substring($waveDir.Length + 1).Replace("\", "/")
             $localRels[$rel] = $true
         }
-        foreach ($rel in $manifest.files.PSObject.Properties.Name) {
+        foreach ($rel in $manifest.files.Keys) {
             if (-not $localRels.ContainsKey($rel)) {
                 $changes += @{ status = "deleted"; path = $rel }
             }
@@ -960,7 +969,7 @@ function Invoke-Diff {
     }
 
     $deleted = @()
-    foreach ($rel in $manifest.files.PSObject.Properties.Name) {
+    foreach ($rel in $manifest.files.Keys) {
         $localPath = Join-Path $waveDir $rel
         if (-not (Test-Path $localPath)) {
             $deleted += $rel
