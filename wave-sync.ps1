@@ -24,7 +24,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$Script:VERSION = "0.3.0"
+$Script:VERSION = "0.4.0"
 $Script:CONFIG_DIR_NAME = "wave-sync"
 $Script:META_FILENAME = ".wave-sync-meta.json"
 $Script:MANIFEST_FILENAME = ".wave-sync-manifest.json"
@@ -61,6 +61,7 @@ $Script:SYNC_EXCLUDE = @(
     ".wave-sync-manifest.json"
     "*.log", "*.log.*", "*.tmp", "*.bak", "*.sock", "*.pid", "*.lock"
     "*.db", "*.db-journal", "*.db-wal", "*.db-shm"
+    "filestore.db"
     "__pycache__"
     "Cache", "Code Cache", "GPUCache"
     "DawnGraphiteCache", "DawnWebGPUCache"
@@ -334,7 +335,7 @@ function Get-WebDavFileList {
 </D:propfind>
 "@
 
-    $result = Invoke-WebDavRequest -Method "PROPFIND" -BaseUrl $BaseUrl -Path $BasePath -Auth $Auth -Body $body -Headers @{ "Depth" = "2" }
+    $result = Invoke-WebDavRequest -Method "PROPFIND" -BaseUrl $BaseUrl -Path $BasePath -Auth $Auth -Body $body -Headers @{ "Depth" = "1" }
     if ($result.Status -notin @(200, 207)) {
         throw "PROPFIND failed: $($result.Status)"
     }
@@ -349,11 +350,9 @@ function Get-WebDavFileList {
         foreach ($resp in $responses) {
             $href = $resp.SelectSingleNode("D:href", $ns).'#text'
             if (-not $href) { continue }
-
             $href = $href.TrimEnd("/")
             $isDir = $null -ne $resp.SelectSingleNode("D:propstat/D:prop/D:resourcetype/D:collection", $ns)
 
-            # Extract relative path
             $relPath = $href
             $basePathNorm = $BasePath.TrimEnd("/")
             if ($relPath.StartsWith($basePathNorm)) {
@@ -366,10 +365,10 @@ function Get-WebDavFileList {
             $size = if ($sizeEl) { [long]$sizeEl.'#text' } else { 0 }
 
             $files += @{
-                href   = $href
-                path   = $relPath
-                isDir  = $isDir
-                size   = $size
+                href  = $href
+                path  = $relPath
+                isDir = $isDir
+                size  = $size
             }
         }
     } catch {
@@ -379,6 +378,20 @@ function Get-WebDavFileList {
     return $files
 }
 
+function Ensure-WebDavDirectories {
+    param(
+        [string]$BaseUrl,
+        [string]$RemotePath,
+        [string]$Auth
+    )
+    $parts = $RemotePath.TrimStart("/").Split("/")
+    $current = ""
+    for ($i = 0; $i -lt $parts.Length - 1; $i++) {
+        $current = if ($current) { "$current/$($parts[$i])" } else { $parts[$i] }
+        Invoke-WebDavRequest -Method "MKCOL" -BaseUrl $BaseUrl -Path $current -Auth $Auth | Out-Null
+    }
+}
+
 function Upload-WebDavFile {
     param(
         [string]$BaseUrl,
@@ -386,7 +399,14 @@ function Upload-WebDavFile {
         [string]$LocalPath,
         [string]$Auth
     )
-    $data = [System.IO.File]::ReadAllBytes($LocalPath)
+    Ensure-WebDavDirectories -BaseUrl $BaseUrl -RemotePath $RemotePath -Auth $Auth
+    $stream = [System.IO.File]::Open($LocalPath, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+    try {
+        $data = New-Object byte[] $stream.Length
+        $stream.Read($data, 0, $stream.Length) | Out-Null
+    } finally {
+        $stream.Close()
+    }
     $result = Invoke-WebDavRequest -Method "PUT" -BaseUrl $BaseUrl -Path $RemotePath -Auth $Auth -BodyBytes $data -Headers @{
         "Content-Type" = "application/octet-stream"
     }

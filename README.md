@@ -219,8 +219,7 @@ wave-sync/
 ├── README.md              # 本文档
 ├── wave-sync.ps1          # 主脚本（PowerShell）
 ├── setup.bat              # Windows 一键安装（双击即用）
-├── config.example.yaml    # 配置示例
-└── .gitignore             # Git 忽略规则
+└── .gitignore             # 忽略规则
 ```
 
 ## 常见问题
