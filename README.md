@@ -8,22 +8,28 @@ Wave Terminal 目前不支持原生的配置同步功能。当你在多台机器
 
 ## 功能
 
-- **一键部署**: Windows 双击 `setup.bat` 即可完成安装，无需安装任何依赖
+- **一键部署**: Windows 双击 `setup.bat` 即可完成安装
 - **零依赖**: 仅使用 PowerShell（Windows 自带）
 - **增量同步**: 仅上传/下载变更文件
+- **DB Workspace 同步**: 从 SQLite 中提取 workspace 相关表同步，而非粗暴复制整个 DB
 - **冲突检测**: 文件级校验 + 跨机器状态追踪
 - **交互式冲突处理**: 冲突时提示你选择处理方式
 - **支持主流 WebDAV 服务**: 坚果云、Nextcloud、Synology 等
+
+## 前提要求
+
+- **Node.js 18+** — 用于从 SQLite DB 导出/导入 workspace 数据
+  - 检查: `node --version`
+  - 安装: `winget install OpenJS.NodeJS` 或 https://nodejs.org
 
 ## 同步范围
 
 | 同步 | 不同步 |
 |------|--------|
-| Workspace 布局 | 终端历史记录 |
-| 标签页配置 | 日志文件 |
-| 连接配置 (connections.json) | AI 对话记录 |
-| 自定义小部件 (widgets.json) | 本地密钥文件 |
-| 主题和外观设置 | 缓存/临时文件 |
+| Workspace 布局、标签页、窗口 | 终端历史记录 |
+| 连接配置 | 日志文件 |
+| 自定义小部件 | AI 对话记录 |
+| 主题和外观设置 | 本地密钥文件 |
 
 ## 快速开始
 
@@ -219,14 +225,29 @@ wave-sync/
 ├── README.md              # 本文档
 ├── wave-sync.ps1          # 主脚本（PowerShell）
 ├── setup.bat              # Windows 一键安装（双击即用）
+├── export_db.js           # DB → JSON 导出
+├── import_db.js           # JSON → DB 导入
 └── .gitignore             # 忽略规则
 ```
 
+## 同步原理
+
+Wave Terminal 0.14+ 将配置存储在 SQLite 数据库 (`waveterm.db`) 中。
+
+1. **Push 时**: `export_db.js` 从 DB 提取 workspace/标签页/窗口/布局等表 → 保存为 JSON → 上传到 WebDAV
+2. **Pull 时**: 从 WebDAV 下载 JSON → `import_db.js` 按版本号增量导入到本地 DB → 重启 Wave 生效
+
+仅同步结构化数据，不包含缓存、日志、二进制文件等。导入时按版本号比较，不会覆盖更新的数据。
+
 ## 常见问题
+
+### Q: 需要安装什么？
+
+A: PowerShell (Windows 自带) + Node.js 18+。
 
 ### Q: 同步后配置没生效？
 
-A: 需要重启 Wave Terminal。配置文件在启动时加载。
+A: 需要重启 Wave Terminal。
 
 ### Q: 不同机器的 SSH 连接能用吗？
 
