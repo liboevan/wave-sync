@@ -210,6 +210,7 @@ function Invoke-WebDavRequest {
         [string]$Path,
         [string]$Auth,
         [string]$Body = $null,
+        [byte[]]$BodyBytes = $null,
         [hashtable]$Headers = @{},
         [int]$TimeoutSec = 30
     )
@@ -222,30 +223,25 @@ function Invoke-WebDavRequest {
         $request.Method = $Method
         $request.Timeout = $TimeoutSec * 1000
         $request.ContentType = "application/xml; charset=utf-8"
-
-        # Auth header
-        $bytes = [System.Text.Encoding]::UTF8.GetBytes($Auth)
         $request.Headers.Add("Authorization", $Auth)
 
-        # Custom headers
         foreach ($k in $Headers.Keys) {
             if ($k -eq "Content-Type") {
                 $request.ContentType = $Headers[$k]
-            } else {
+            } elseif ($k -ne "Content-Length") {
                 $request.Headers.Add($k, $Headers[$k])
             }
         }
 
-        # Body
-        if ($Body) {
+        if ($BodyBytes) {
+            $request.ContentLength = $BodyBytes.Length
+            $stream = $request.GetRequestStream()
+            try { $stream.Write($BodyBytes, 0, $BodyBytes.Length) } finally { $stream.Close() }
+        } elseif ($Body) {
             $bodyBytes = [System.Text.Encoding]::UTF8.GetBytes($Body)
             $request.ContentLength = $bodyBytes.Length
             $stream = $request.GetRequestStream()
-            try {
-                $stream.Write($bodyBytes, 0, $bodyBytes.Length)
-            } finally {
-                $stream.Close()
-            }
+            try { $stream.Write($bodyBytes, 0, $bodyBytes.Length) } finally { $stream.Close() }
         } else {
             $request.ContentLength = 0
         }
@@ -257,29 +253,21 @@ function Invoke-WebDavRequest {
         $statusCode = [int]$response.StatusCode
         $response.Close()
 
-        return @{
-            Status  = $statusCode
-            Content = $content
-        }
+        return @{ Status = $statusCode; Content = $content }
     } catch {
         $statusCode = 0
+        $content = ""
         if ($_.Exception.Response) {
             $statusCode = [int]$_.Exception.Response.StatusCode
             try {
                 $reader = [System.IO.StreamReader]::new($_.Exception.Response.GetResponseStream())
                 $content = $reader.ReadToEnd()
                 $reader.Close()
-            } catch {
-                $content = $_.Exception.Message
-            }
+            } catch { $content = $_.Exception.Message }
         } else {
             $content = $_.Exception.Message
         }
-        return @{
-            Status  = $statusCode
-            Content = $content
-            Error   = $true
-        }
+        return @{ Status = $statusCode; Content = $content; Error = $true }
     }
 }
 
@@ -362,9 +350,8 @@ function Upload-WebDavFile {
         [string]$Auth
     )
     $data = [System.IO.File]::ReadAllBytes($LocalPath)
-    $result = Invoke-WebDavRequest -Method "PUT" -BaseUrl $BaseUrl -Path $RemotePath -Auth $Auth -Body ([System.Text.Encoding]::UTF8.GetString($data)) -Headers @{
-        "Content-Type"   = "application/octet-stream"
-        "Content-Length" = $data.Length.ToString()
+    $result = Invoke-WebDavRequest -Method "PUT" -BaseUrl $BaseUrl -Path $RemotePath -Auth $Auth -BodyBytes $data -Headers @{
+        "Content-Type" = "application/octet-stream"
     }
     return ($result.Status -in @(200, 201, 204, 207))
 }
@@ -376,20 +363,34 @@ function Download-WebDavFile {
         [string]$LocalPath,
         [string]$Auth
     )
-    $result = Invoke-WebDavRequest -Method "GET" -BaseUrl $BaseUrl -Path $RemotePath -Auth $Auth
-    if ($result.Status -ne 200) {
-        throw "GET failed: $($result.Status)"
-    }
 
-    $dir = Split-Path $LocalPath -Parent
-    if ($dir -and -not (Test-Path $dir)) {
-        New-Item -ItemType Directory -Path $dir -Force | Out-Null
-    }
+    $urlPath = $RemotePath.TrimStart("/")
+    $fullUrl = $BaseUrl.TrimEnd("/") + "/" + $urlPath
 
-    # Write content as bytes
-    $bytes = [System.Text.Encoding]::UTF8.GetBytes($result.Content)
-    [System.IO.File]::WriteAllBytes($LocalPath, $bytes)
-    return $true
+    try {
+        $request = [System.Net.WebRequest]::Create($fullUrl)
+        $request.Method = "GET"
+        $request.Timeout = 30000
+        $request.Headers.Add("Authorization", $Auth)
+
+        $response = $request.GetResponse()
+        $stream = $response.GetResponseStream()
+        $dir = Split-Path $LocalPath -Parent
+        if ($dir -and -not (Test-Path $dir)) {
+            New-Item -ItemType Directory -Path $dir -Force | Out-Null
+        }
+        $fileStream = [System.IO.File]::Create($LocalPath)
+        try {
+            $stream.CopyTo($fileStream)
+        } finally {
+            $fileStream.Close()
+            $stream.Close()
+            $response.Close()
+        }
+        return $true
+    } catch {
+        throw "GET failed: $($_.Exception.Message)"
+    }
 }
 
 function Remove-WebDavFile {
