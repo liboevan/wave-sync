@@ -9,25 +9,18 @@ echo   Wave Terminal 配置同步工具
 echo  ======================================
 echo.
 
-:: ── Step 1: 检测 Python ──────────────────────────────────────
-echo [1/4] 检测 Python...
-python --version >nul 2>&1
+:: ── Step 1: 检测 PowerShell ──────────────────────────────────
+echo [1/4] 检测 PowerShell...
+powershell -Command "$PSVersionTable.PSVersion.Major" >nul 2>&1
 if %errorlevel% neq 0 (
     echo.
-    echo [!] 未检测到 Python 3
-    echo.
-    echo     请先安装 Python:
-    echo       方法 A: winget install Python.Python.3.12
-    echo       方法 B: https://www.python.org/downloads/
-    echo.
-    echo     安装时请勾选 "Add Python to PATH"
+    echo [!] 未检测到 PowerShell
+    echo     Windows 10/11 自带 PowerShell，请检查系统环境。
     echo.
     pause
     exit /b 1
 )
-
-for /f "tokens=2" %%v in ('python --version 2^>^&1') do set PY_VER=%%v
-echo       Python %PY_VER% 已就绪
+echo       PowerShell 已就绪
 
 :: ── Step 2: 安装 wave-sync ───────────────────────────────────
 echo.
@@ -40,12 +33,13 @@ if not exist "%INSTALL_DIR%" (
     mkdir "%INSTALL_DIR%"
 )
 
-copy /Y "%SCRIPT_DIR%wave_sync.py" "%INSTALL_DIR%\wave-sync.py" >nul
+:: 复制 PowerShell 脚本
+copy /Y "%SCRIPT_DIR%wave-sync.ps1" "%INSTALL_DIR%\wave-sync.ps1" >nul
 
-:: 创建 bat 包装器
+:: 创建 bat 包装器（让 wave-sync 命令可用）
 (
 echo @echo off
-echo python "%%~dp0wave-sync.py" %%*
+echo powershell -ExecutionPolicy Bypass -File "%%~dp0wave-sync.ps1" %%*
 ) > "%INSTALL_DIR%\wave-sync.bat"
 
 :: 检查是否已在 PATH 中
@@ -82,14 +76,13 @@ if exist "%CONFIG_FILE%" (
 ) else (
     (
     echo # wave-sync 配置文件
-    echo # https://github.com/evan/wave-sync
+    echo # https://github.com/liboevan/wave-sync
     echo.
-    echo webdav:
-    echo   # 坚果云（国内首选）
-    echo   # 获取应用密码: 坚果云 - 账户信息 - 安全选项 - 第三方应用管理 - 添加应用密码
-    echo   url: "https://dav.jianguoyun.com/dav/wave-sync"
-    echo   user: "your@email.com"
-    echo   password: ""  # 应用密码（非登录密码），留空则运行时交互输入
+    echo # WebDAV 服务器配置
+    echo # 坚果云获取应用密码: 坚果云 - 账户信息 - 安全选项 - 第三方应用管理 - 添加应用密码
+    echo url: "https://dav.jianguoyun.com/dav/wave-sync"
+    echo user: "your@email.com"
+    echo password: ""
     ) > "%CONFIG_FILE%"
     echo       已创建: %CONFIG_FILE%
 )
@@ -100,7 +93,7 @@ echo [4/4] 打开配置文件...
 echo.
 echo       请在配置文件中填写你的 WebDAV 信息:
 echo         url: WebDAV 服务器地址
-    echo         user: 用户名
+echo         user: 用户名
 echo         password: 应用密码
 echo.
 

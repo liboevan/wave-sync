@@ -8,12 +8,12 @@ Wave Terminal 目前不支持原生的配置同步功能。当你在多台机器
 
 ## 功能
 
-- **跨平台**: Windows / macOS / Linux（Python 3）
-- **一键部署**: Windows 双击 `setup.bat` 即可完成安装
+- **一键部署**: Windows 双击 `setup.bat` 即可完成安装，无需安装任何依赖
+- **零依赖**: 仅使用 PowerShell（Windows 自带）
 - **增量同步**: 仅上传/下载变更文件
 - **冲突检测**: 文件级校验 + 跨机器状态追踪
 - **交互式冲突处理**: 冲突时提示你选择处理方式
-- **零依赖**: 仅使用 Python 标准库，无需 pip install
+- **支持主流 WebDAV 服务**: 坚果云、Nextcloud、Synology 等
 
 ## 同步范围
 
@@ -27,7 +27,7 @@ Wave Terminal 目前不支持原生的配置同步功能。当你在多台机器
 
 ## 快速开始
 
-### Windows 一键安装（推荐）
+### 一键安装（推荐）
 
 1. 下载本仓库（Clone or Download ZIP）
 2. 双击 `setup.bat`
@@ -36,41 +36,39 @@ Wave Terminal 目前不支持原生的配置同步功能。当你在多台机器
 
 ### 手动安装
 
-**Linux / macOS:**
-```bash
-chmod +x install.sh
-./install.sh
-```
-
-**Windows (PowerShell):**
 ```powershell
-.\install.ps1
-```
+# 复制脚本到 PATH 目录
+copy wave-sync.ps1 "$env:LOCALAPPDATA\wave-sync\bin\wave-sync.ps1"
 
-或直接复制 `wave_sync.py` 到 PATH 中的目录。
+# 创建 bat 包装器
+@"
+@echo off
+powershell -ExecutionPolicy Bypass -File "%~dp0wave-sync.ps1" %*
+"@ | Out-File "$env:LOCALAPPDATA\wave-sync\bin\wave-sync.bat" -Encoding ASCII
+
+# 加入 PATH（需重启终端生效）
+$env:Path += ";$env:LOCALAPPDATA\wave-sync\bin"
+```
 
 ### 初始化配置
 
-```bash
+```powershell
 wave-sync init
 ```
 
-这会创建配置文件：
-- Linux/macOS: `~/.config/wave-sync/config.yaml`
-- Windows: `%APPDATA%\wave-sync\config.yaml`
+配置文件路径: `%APPDATA%\wave-sync\config.yaml`
 
 ### 编辑配置
 
 ```yaml
-webdav:
-  url: "https://dav.jianguoyun.com/dav/wave-sync"
-  user: "your@email.com"
-  password: "your-app-password"
+url: "https://dav.jianguoyun.com/dav/wave-sync"
+user: "your@email.com"
+password: "your-app-password"
 ```
 
 ### 开始同步
 
-```bash
+```powershell
 # 上传本地配置
 wave-sync push
 
@@ -94,10 +92,9 @@ wave-sync diff
 4. 复制生成的密码到配置文件
 
 ```yaml
-webdav:
-  url: "https://dav.jianguoyun.com/dav/wave-sync"
-  user: "your@email.com"
-  password: "应用密码（非登录密码）"
+url: "https://dav.jianguoyun.com/dav/wave-sync"
+user: "your@email.com"
+password: "应用密码（非登录密码）"
 ```
 
 > 注意：坚果云的 WebDAV 目录需要手动创建。先在坚果云客户端创建一个 "wave-sync" 文件夹。
@@ -141,12 +138,12 @@ webdav:
 
 ### 强制覆盖
 
-```bash
+```powershell
 # 以本地为准（覆盖云端）
-wave-sync push --force
+wave-sync push -Force
 
 # 以云端为准（覆盖本地）
-wave-sync pull --force
+wave-sync pull -Force
 ```
 
 ### 推荐工作流
@@ -160,23 +157,23 @@ wave-sync pull --force
 
 ## 命令行用法
 
-```bash
+```powershell
 wave-sync init                    # 初始化配置文件
 wave-sync push                    # 上传配置
-wave-sync push --force            # 强制上传（忽略冲突）
+wave-sync push -Force             # 强制上传（忽略冲突）
 wave-sync pull                    # 下载配置
-wave-sync pull --force            # 强制下载（忽略冲突）
+wave-sync pull -Force             # 强制下载（忽略冲突）
 wave-sync status                  # 查看同步状态
 wave-sync diff                    # 查看未同步的更改
-wave-sync -h                      # 显示帮助
+wave-sync help                    # 显示帮助
 
 # 通过参数覆盖配置
-wave-sync push --url "https://..." --user "user" --password "pass"
+wave-sync push -Url "https://..." -User "user" -Password "pass"
 
 # 通过环境变量覆盖配置
-export WAVESYNC_WEBDAV_URL="https://..."
-export WAVESYNC_WEBDAV_USER="user"
-export WAVESYNC_WEBDAV_PASS="pass"
+$env:WAVESYNC_WEBDAV_URL = "https://..."
+$env:WAVESYNC_WEBDAV_USER = "user"
+$env:WAVESYNC_WEBDAV_PASS = "pass"
 wave-sync push
 ```
 
@@ -184,7 +181,7 @@ wave-sync push
 
 Wave Terminal 不支持传统插件系统，但你可以通过以下方式集成：
 
-### 方式 1: 自定义 Widget
+### 自定义 Widget
 
 在 Wave 的 `widgets.json` 中添加 sync widget：
 
@@ -206,18 +203,6 @@ Wave Terminal 不支持传统插件系统，但你可以通过以下方式集成
 }
 ```
 
-### 方式 2: 别名
-
-在 shell 配置中添加别名：
-
-```bash
-# ~/.bashrc 或 ~/.zshrc
-alias ws='wave-sync'
-alias wsp='wave-sync push'
-alias wsl='wave-sync pull'
-alias wss='wave-sync status'
-```
-
 ## WebDAV 服务推荐
 
 | 服务 | 免费额度 | 说明 |
@@ -232,10 +217,8 @@ alias wss='wave-sync status'
 ```
 wave-sync/
 ├── README.md              # 本文档
-├── wave_sync.py           # 主脚本（可直接运行）
+├── wave-sync.ps1          # 主脚本（PowerShell）
 ├── setup.bat              # Windows 一键安装（双击即用）
-├── install.ps1            # Windows PowerShell 安装脚本
-├── install.sh             # Linux/macOS 安装脚本
 ├── config.example.yaml    # 配置示例
 └── .gitignore             # Git 忽略规则
 ```
@@ -250,10 +233,6 @@ A: 需要重启 Wave Terminal。配置文件在启动时加载。
 
 A: 连接配置会同步，但 SSH 密钥不会。你需要在每台机器上单独配置密钥。
 
-### Q: 支持 Linux/macOS 吗？
-
-A: 完全支持。本工具使用 Python 3 编写，跨平台运行。
-
 ### Q: 密码安全吗？
 
 A: 配置文件中的密码是明文存储，建议：
@@ -267,6 +246,13 @@ A: 常见原因：
 1. 使用了登录密码而非应用密码
 2. WebDAV 目录不存在（需先在坚果云客户端创建）
 3. 网络问题
+
+### Q: 执行策略报错？
+
+A: 运行以下命令解除限制：
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
+```
 
 ## License
 
