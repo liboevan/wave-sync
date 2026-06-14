@@ -603,8 +603,24 @@ function Export-WaveDb {
 
     $sqliteFlags = Get-NodeSqliteFlags $nodePath
     Write-Info "Exporting workspace from DB..."
-    $result = & $nodePath --no-warnings @sqliteFlags $exportScript $dbPath $exportDir 2>&1
-    $result | ForEach-Object { Write-Dim "  $_" }
+    $flagStr = if ($sqliteFlags.Count -gt 0) { $sqliteFlags[0] } else { "" }
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = $nodePath
+    $psi.Arguments = "--no-warnings $flagStr `"$exportScript`" `"$dbPath`" `"$exportDir`""
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    $psi.UseShellExecute = $false
+    $psi.CreateNoWindow = $true
+    $p = [System.Diagnostics.Process]::Start($psi)
+    if (-not $p.WaitForExit(15000)) {
+        $p.Kill()
+        Write-Warn "waveterm.db 导出超时（Wave Terminal 正在运行?）"
+        Write-Dim "请先关闭 Wave Terminal，再重试 push"
+        return $false
+    }
+    $result = $p.StandardOutput.ReadToEnd() + $p.StandardError.ReadToEnd()
+    $LASTEXITCODE = $p.ExitCode
+    $result -split "`n" | ForEach-Object { if ($_) { Write-Dim "  $_" } }
 
     # Check for locked DB
     if ($LASTEXITCODE -ne 0) {
@@ -643,8 +659,22 @@ function Import-WaveDb {
 
     $sqliteFlags = Get-NodeSqliteFlags $nodePath
     Write-Info "Importing workspace to DB..."
-    $result = & $nodePath --no-warnings @sqliteFlags $importScript $dbPath $exportDir 2>&1
-    $result | ForEach-Object { Write-Dim "  $_" }
+    $flagStr = if ($sqliteFlags.Count -gt 0) { $sqliteFlags[0] } else { "" }
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = $nodePath
+    $psi.Arguments = "--no-warnings $flagStr `"$importScript`" `"$dbPath`" `"$exportDir`""
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    $psi.UseShellExecute = $false
+    $psi.CreateNoWindow = $true
+    $p = [System.Diagnostics.Process]::Start($psi)
+    if (-not $p.WaitForExit(15000)) {
+        $p.Kill()
+        Write-Warn "DB 导入超时（Wave Terminal 正在运行? 请先关闭）"
+        return
+    }
+    $result = $p.StandardOutput.ReadToEnd() + $p.StandardError.ReadToEnd()
+    $result -split "`n" | ForEach-Object { if ($_) { Write-Dim "  $_" } }
 }
 
 # ── Sync Meta ───────────────────────────────────────────────────────────────

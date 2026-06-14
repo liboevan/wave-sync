@@ -17,7 +17,7 @@ const TABLE_MAP = {
 
 let db;
 try {
-  db = new DatabaseSync(dbPath, {allowExtendedKeys: true});
+  db = new DatabaseSync(dbPath, {allowExtendedKeys: true, timeout: 3000});
 } catch (e) {
   console.error(`FATAL: cannot open DB (locked by Wave?): ${e.message}`);
   process.exit(1);

@@ -11,7 +11,7 @@ const SYNC_TABLES = ['db_block', 'db_client', 'db_layout', 'db_mainserver', 'db_
 
 let db;
 try {
-  db = new DatabaseSync(dbPath, {readOnly: true, allowExtendedKeys: true});
+  db = new DatabaseSync(dbPath, {readOnly: true, allowExtendedKeys: true, timeout: 3000});
 } catch (e) {
   console.error(`FATAL: cannot open DB (locked by Wave?): ${e.message}`);
   process.exit(1);
