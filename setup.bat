@@ -34,6 +34,8 @@ if not exist "%INSTALL_DIR%" (
 )
 
 copy /Y "%SCRIPT_DIR%wave-sync.ps1" "%INSTALL_DIR%\wave-sync.ps1" >nul
+copy /Y "%SCRIPT_DIR%export_db.js" "%INSTALL_DIR%\export_db.js" >nul
+copy /Y "%SCRIPT_DIR%import_db.js" "%INSTALL_DIR%\import_db.js" >nul
 
 echo @echo off> "%INSTALL_DIR%\wave-sync.bat"
 echo powershell -NoProfile -ExecutionPolicy Bypass -File "%INSTALL_DIR%\wave-sync.ps1" %%*>> "%INSTALL_DIR%\wave-sync.bat"
