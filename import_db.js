@@ -15,7 +15,13 @@ const TABLE_MAP = {
   'workspace.json': 'db_workspace',
 };
 
-const db = new DatabaseSync(dbPath, {allowExtendedKeys: true});
+let db;
+try {
+  db = new DatabaseSync(dbPath, {allowExtendedKeys: true});
+} catch (e) {
+  console.error(`FATAL: cannot open DB (locked by Wave?): ${e.message}`);
+  process.exit(1);
+}
 let totalInserted = 0, totalUpdated = 0, totalSkipped = 0;
 
 for (const [fileName, tableName] of Object.entries(TABLE_MAP)) {

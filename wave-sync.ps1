@@ -605,6 +605,21 @@ function Export-WaveDb {
     Write-Info "Exporting workspace from DB..."
     $result = & $nodePath --no-warnings @sqliteFlags $exportScript $dbPath $exportDir 2>&1
     $result | ForEach-Object { Write-Dim "  $_" }
+
+    # Check for locked DB
+    if ($LASTEXITCODE -ne 0) {
+        foreach ($line in $result) {
+            if ($line -match "cannot open DB|locked|SQLITE_CANTOPEN") {
+                Write-Warn "waveterm.db 被 Wave Terminal 锁定"
+                Write-Dim "请先关闭 Wave Terminal，再重试 push"
+                Write-Dim "或手动导出后上传:"
+                Write-Dim "  node --experimental-sqlite export_db.js `"$dbPath`" `"$exportDir`""
+                return $false
+            }
+        }
+        Write-Warn "DB 导出失败"
+        return $false
+    }
     return $true
 }
 

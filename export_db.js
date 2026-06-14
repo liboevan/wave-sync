@@ -9,7 +9,13 @@ if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, {recursive: true});
 
 const SYNC_TABLES = ['db_block', 'db_client', 'db_layout', 'db_mainserver', 'db_tab', 'db_window', 'db_workspace'];
 
-const db = new DatabaseSync(dbPath, {readOnly: true, allowExtendedKeys: true});
+let db;
+try {
+  db = new DatabaseSync(dbPath, {readOnly: true, allowExtendedKeys: true});
+} catch (e) {
+  console.error(`FATAL: cannot open DB (locked by Wave?): ${e.message}`);
+  process.exit(1);
+}
 
 for (const table of SYNC_TABLES) {
   try {
@@ -39,5 +45,5 @@ for (const table of SYNC_TABLES) {
   }
 }
 
-db.close();
+if (db) db.close();
 console.log('Done. Output:', outDir);
