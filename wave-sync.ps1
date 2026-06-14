@@ -15,15 +15,12 @@
 
 param(
     [Parameter(Position = 0)]
-    [ValidateSet("init", "push", "pull", "status", "diff", "help", "-h", "--help")]
     [string]$Command = "help",
-
     [string]$Url = "",
     [string]$User = "",
     [string]$Password = "",
     [string]$WaveDir = "",
-    [switch]$Force,
-    [switch]$Version
+    [switch]$Force
 )
 
 $ErrorActionPreference = "Stop"

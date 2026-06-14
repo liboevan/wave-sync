@@ -35,10 +35,8 @@ if not exist "%INSTALL_DIR%" (
 
 copy /Y "%SCRIPT_DIR%wave-sync.ps1" "%INSTALL_DIR%\wave-sync.ps1" >nul
 
-(
-echo @echo off
-echo powershell -ExecutionPolicy Bypass -File "%%~dp0wave-sync.ps1" %%*
-) > "%INSTALL_DIR%\wave-sync.bat"
+echo @echo off> "%INSTALL_DIR%\wave-sync.bat"
+echo powershell -NoProfile -ExecutionPolicy Bypass -File "%INSTALL_DIR%\wave-sync.ps1" %%*>> "%INSTALL_DIR%\wave-sync.bat"
 
 echo %PATH% | findstr /i /c:"%INSTALL_DIR%" >nul 2>&1
 if %errorlevel% neq 0 (
