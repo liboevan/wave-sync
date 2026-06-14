@@ -59,9 +59,10 @@ $Script:WAVE_DIR_PATTERNS = @{
 $Script:SYNC_EXCLUDE = @(
     ".wave-sync-meta.json"
     ".wave-sync-manifest.json"
+    "wave-sync-export"
     "*.log", "*.log.*", "*.tmp", "*.bak", "*.sock", "*.pid", "*.lock"
-    "*.db", "*.db-journal", "*.db-wal", "*.db-shm"
-    "filestore.db"
+    "*.db-journal", "*.db-wal", "*.db-shm"
+    "filestore.db", "filestore.db-shm", "filestore.db-wal"
     "__pycache__"
     "Cache", "Code Cache", "GPUCache"
     "DawnGraphiteCache", "DawnWebGPUCache"
