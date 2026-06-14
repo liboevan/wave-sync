@@ -61,6 +61,7 @@ $Script:SYNC_EXCLUDE = @(
     ".wave-sync-manifest.json"
     "wave-sync-export"
     "*.log", "*.log.*", "*.tmp", "*.bak", "*.sock", "*.pid", "*.lock"
+    "waveterm.db", "waveterm.db-journal", "waveterm.db-wal", "waveterm.db-shm"
     "*.db-journal", "*.db-wal", "*.db-shm"
     "filestore.db", "filestore.db-shm", "filestore.db-wal"
     "__pycache__"
@@ -565,6 +566,20 @@ function Find-NodeJs {
     return $null
 }
 
+function Get-NodeSqliteFlags {
+    param([string]$NodePath)
+    try {
+        $ver = & $NodePath --version
+        if ($ver -match "v(\d+)") {
+            $major = [int]$Matches[1]
+            if ($major -ge 23) { return @() }               # stable node:sqlite
+            if ($major -eq 22) { return @("--experimental-sqlite") }  # experimental
+        }
+    } catch { }
+    # Fallback: try with experimental flag
+    return @("--experimental-sqlite")
+}
+
 function Get-ExportDir {
     param([string]$WaveDir)
     return Join-Path $WaveDir "wave-sync-export"
@@ -586,8 +601,9 @@ function Export-WaveDb {
     if (-not $scriptDir) { $scriptDir = $PSScriptRoot }
     $exportScript = Join-Path $scriptDir "export_db.js"
 
+    $sqliteFlags = Get-NodeSqliteFlags $nodePath
     Write-Info "Exporting workspace from DB..."
-    $result = & $nodePath --no-warnings $exportScript $dbPath $exportDir 2>&1
+    $result = & $nodePath --no-warnings @sqliteFlags $exportScript $dbPath $exportDir 2>&1
     $result | ForEach-Object { Write-Dim "  $_" }
     return $true
 }
@@ -610,8 +626,9 @@ function Import-WaveDb {
     if (-not $scriptDir) { $scriptDir = $PSScriptRoot }
     $importScript = Join-Path $scriptDir "import_db.js"
 
+    $sqliteFlags = Get-NodeSqliteFlags $nodePath
     Write-Info "Importing workspace to DB..."
-    $result = & $nodePath --no-warnings $importScript $dbPath $exportDir 2>&1
+    $result = & $nodePath --no-warnings @sqliteFlags $importScript $dbPath $exportDir 2>&1
     $result | ForEach-Object { Write-Dim "  $_" }
 }
 
