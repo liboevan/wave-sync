@@ -547,6 +547,74 @@ function Save-Manifest {
     $Manifest | ConvertTo-Json -Depth 10 | Out-File -FilePath $path -Encoding UTF8 -Force
 }
 
+# ── DB Export/Import (Wave 0.14+ uses SQLite) ──────────────────────────────
+
+$Script:DB_TABLES = @("db_block", "db_client", "db_layout", "db_mainserver", "db_tab", "db_window", "db_workspace")
+
+function Find-NodeJs {
+    $node = Get-Command node -ErrorAction SilentlyContinue
+    if ($node) { return $node.Source }
+    $paths = @(
+        "$env:ProgramFiles\nodejs\node.exe"
+        "$env:LOCALAPPDATA\Programs\node\node.exe"
+        "$env:ProgramFiles(x86)\nodejs\node.exe"
+    )
+    foreach ($p in $paths) {
+        if (Test-Path $p) { return $p }
+    }
+    return $null
+}
+
+function Get-ExportDir {
+    param([string]$WaveDir)
+    return Join-Path $WaveDir "wave-sync-export"
+}
+
+function Export-WaveDb {
+    param([string]$WaveDir)
+    $dbPath = Join-Path $WaveDir "Data\db\waveterm.db"
+    if (-not (Test-Path $dbPath)) { return $false }
+
+    $nodePath = Find-NodeJs
+    if (-not $nodePath) {
+        Write-Warn "Node.js not found, cannot export DB"
+        return $false
+    }
+
+    $exportDir = Get-ExportDir $WaveDir
+    $scriptDir = Split-Path $MyInvocation.ScriptName -Parent
+    if (-not $scriptDir) { $scriptDir = $PSScriptRoot }
+    $exportScript = Join-Path $scriptDir "export_db.js"
+
+    Write-Info "Exporting workspace from DB..."
+    $result = & $nodePath --no-warnings $exportScript $dbPath $exportDir 2>&1
+    $result | ForEach-Object { Write-Dim "  $_" }
+    return $true
+}
+
+function Import-WaveDb {
+    param([string]$WaveDir)
+    $dbPath = Join-Path $WaveDir "Data\db\waveterm.db"
+    if (-not (Test-Path $dbPath)) { return }
+
+    $nodePath = Find-NodeJs
+    if (-not $nodePath) {
+        Write-Warn "Node.js not found, cannot import to DB"
+        return
+    }
+
+    $exportDir = Get-ExportDir $WaveDir
+    if (-not (Test-Path $exportDir)) { return }
+
+    $scriptDir = Split-Path $MyInvocation.ScriptName -Parent
+    if (-not $scriptDir) { $scriptDir = $PSScriptRoot }
+    $importScript = Join-Path $scriptDir "import_db.js"
+
+    Write-Info "Importing workspace to DB..."
+    $result = & $nodePath --no-warnings $importScript $dbPath $exportDir 2>&1
+    $result | ForEach-Object { Write-Dim "  $_" }
+}
+
 # ── Sync Meta ───────────────────────────────────────────────────────────────
 
 function Load-SyncMeta {
@@ -788,7 +856,10 @@ function Invoke-Push {
     if ($changed.Count -gt 0) { Write-Info "修改: $($changed.Count) 个文件" }
     if ($deleted.Count -gt 0) { Write-Info "删除: $($deleted.Count) 个文件" }
 
-    # Upload
+    # Export DB to JSON
+    $dbExported = Export-WaveDb -WaveDir $waveDir
+
+    # Upload regular files
     $success = 0; $fail = 0
     foreach ($f in $files) {
         $rel = $f.FullName.Substring($waveDir.Length + 1).Replace("\", "/")
@@ -809,6 +880,26 @@ function Invoke-Push {
         try {
             Remove-WebDavFile -BaseUrl $baseUrl -RemotePath $rel -Auth $auth | Out-Null
         } catch { }
+    }
+
+    # Upload DB export files
+    if ($dbExported) {
+        $exportDir = Get-ExportDir $waveDir
+        $exportFiles = Get-ChildItem -Path $exportDir -Filter "*.json" -File
+        $exportOk = 0; $exportFail = 0
+        foreach ($ef in $exportFiles) {
+            $rel = "wave-sync-export/$($ef.Name)"
+            Write-Dim "  [DB] $rel"
+            try {
+                Upload-WebDavFile -BaseUrl $baseUrl -RemotePath $rel -LocalPath $ef.FullName -Auth $auth | Out-Null
+                $exportOk++
+            } catch {
+                Write-Err "    DB上传失败: $_"
+                $exportFail++
+            }
+        }
+        if ($exportOk -gt 0) { Write-Info "DB workspace 导出上传: $exportOk 个文件" }
+        $success += $exportOk
     }
 
     # Save manifest
@@ -917,6 +1008,30 @@ function Invoke-Pull {
             Write-Err "    失败: $_"
             $fail++
         }
+    }
+
+    # Download DB export files
+    try {
+        $exportFiles = Get-WebDavFileList -BaseUrl $baseUrl -BasePath "wave-sync-export" -Auth $auth
+        $exportFiles = $exportFiles | Where-Object { -not $_.isDir -and $_.path }
+        if ($exportFiles.Count -gt 0) {
+            $exportDir = Get-ExportDir $waveDir
+            if (-not (Test-Path $exportDir)) { New-Item -ItemType Directory -Path $exportDir -Force | Out-Null }
+            Write-Info "下载 DB workspace 导出..."
+            foreach ($ef in $exportFiles) {
+                $localPath = Join-Path $exportDir $ef.path
+                Write-Dim "  [DB] $($ef.path)"
+                try {
+                    Download-WebDavFile -BaseUrl $baseUrl -RemotePath "wave-sync-export/$($ef.path)" -LocalPath $localPath -Auth $auth | Out-Null
+                } catch {
+                    Write-Err "    DB下载失败: $_"
+                }
+            }
+            # Import to DB
+            Import-WaveDb -WaveDir $waveDir
+        }
+    } catch {
+        Write-Dim "  (没有远程 DB 导出文件)"
     }
 
     # Save manifest
