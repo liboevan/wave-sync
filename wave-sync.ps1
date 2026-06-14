@@ -603,24 +603,12 @@ function Export-WaveDb {
 
     $sqliteFlags = Get-NodeSqliteFlags $nodePath
     Write-Info "Exporting workspace from DB..."
-    $flagStr = if ($sqliteFlags.Count -gt 0) { $sqliteFlags[0] } else { "" }
-    $psi = New-Object System.Diagnostics.ProcessStartInfo
-    $psi.FileName = $nodePath
-    $psi.Arguments = "--no-warnings $flagStr `"$exportScript`" `"$dbPath`" `"$exportDir`""
-    $psi.RedirectStandardOutput = $true
-    $psi.RedirectStandardError = $true
-    $psi.UseShellExecute = $false
-    $psi.CreateNoWindow = $true
-    $p = [System.Diagnostics.Process]::Start($psi)
-    if (-not $p.WaitForExit(15000)) {
-        $p.Kill()
-        Write-Warn "waveterm.db 导出超时（Wave Terminal 正在运行?）"
-        Write-Dim "请先关闭 Wave Terminal，再重试 push"
-        return $false
+    if ($sqliteFlags.Count -gt 0) {
+        & $nodePath --no-warnings $sqliteFlags[0] $exportScript $dbPath $exportDir 2>&1 | ForEach-Object { Write-Dim "  $_" }
+    } else {
+        & $nodePath $exportScript $dbPath $exportDir 2>&1 | ForEach-Object { Write-Dim "  $_" }
     }
-    $result = $p.StandardOutput.ReadToEnd() + $p.StandardError.ReadToEnd()
-    $LASTEXITCODE = $p.ExitCode
-    $result -split "`n" | ForEach-Object { if ($_) { Write-Dim "  $_" } }
+    if ($LASTEXITCODE -ne 0) {
 
     # Check for locked DB
     if ($LASTEXITCODE -ne 0) {
@@ -659,22 +647,11 @@ function Import-WaveDb {
 
     $sqliteFlags = Get-NodeSqliteFlags $nodePath
     Write-Info "Importing workspace to DB..."
-    $flagStr = if ($sqliteFlags.Count -gt 0) { $sqliteFlags[0] } else { "" }
-    $psi = New-Object System.Diagnostics.ProcessStartInfo
-    $psi.FileName = $nodePath
-    $psi.Arguments = "--no-warnings $flagStr `"$importScript`" `"$dbPath`" `"$exportDir`""
-    $psi.RedirectStandardOutput = $true
-    $psi.RedirectStandardError = $true
-    $psi.UseShellExecute = $false
-    $psi.CreateNoWindow = $true
-    $p = [System.Diagnostics.Process]::Start($psi)
-    if (-not $p.WaitForExit(15000)) {
-        $p.Kill()
-        Write-Warn "DB 导入超时（Wave Terminal 正在运行? 请先关闭）"
-        return
+    if ($sqliteFlags.Count -gt 0) {
+        & $nodePath --no-warnings $sqliteFlags[0] $importScript $dbPath $exportDir 2>&1 | ForEach-Object { Write-Dim "  $_" }
+    } else {
+        & $nodePath $importScript $dbPath $exportDir 2>&1 | ForEach-Object { Write-Dim "  $_" }
     }
-    $result = $p.StandardOutput.ReadToEnd() + $p.StandardError.ReadToEnd()
-    $result -split "`n" | ForEach-Object { if ($_) { Write-Dim "  $_" } }
 }
 
 # ── Sync Meta ───────────────────────────────────────────────────────────────
@@ -899,7 +876,8 @@ function Invoke-Push {
     $totalOps = $newFiles.Count + $changed.Count + $deleted.Count
     $totalUploads = $totalOps + ($exportFiles.Count)
 
-    if ($totalUploads -eq 0 -and -not $dbExported -and -not $Force) {
+    if ($totalUploads -eq 0 -and -not $Force) {
+        if (-not $dbExported) { return }  # export already printed error
         Write-Ok "没有需要同步的内容"
         return
     }
