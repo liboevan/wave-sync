@@ -971,76 +971,62 @@ function Invoke-Pull {
 
     # List remote files
     Write-Info "获取远程文件列表..."
+    $rootFiles = @(); $exportFiles = @()
     try {
-        $remoteFiles = Get-WebDavFileList -BaseUrl $baseUrl -BasePath "" -Auth $auth
-    } catch {
-        Write-Err "获取文件列表失败: $_"
-        exit 1
-    }
+        $rootFiles = Get-WebDavFileList -BaseUrl $baseUrl -BasePath "" -Auth $auth
+        $rootFiles = $rootFiles | Where-Object { -not $_.isDir -and $_.path }
+    } catch { }
+    try {
+        $exportFiles = Get-WebDavFileList -BaseUrl $baseUrl -BasePath "wave-sync-export" -Auth $auth
+        $exportFiles = $exportFiles | Where-Object { -not $_.isDir -and $_.path }
+    } catch { }
 
-    $remoteFiles = $remoteFiles | Where-Object { -not $_.isDir -and $_.path }
-    Write-Info "远程找到 $($remoteFiles.Count) 个文件"
+    $totalRemote = $rootFiles.Count + $exportFiles.Count
+    Write-Info "远程找到 $totalRemote 个文件"
 
-    if ($remoteFiles.Count -eq 0) {
+    if ($totalRemote -eq 0) {
         Write-Warn "远程没有同步文件，请先在其他机器上执行 push"
         return
     }
 
-    # Check file conflicts
-    $conflicts = Find-FileConflicts -BaseDir $waveDir -RemoteFiles $remoteFiles
-    if ($conflicts.Count -gt 0) {
-        Write-Warn "发现 $($conflicts.Count) 个文件可能有冲突:"
-        foreach ($c in $conflicts) {
-            Write-Dim "  ⚠ $($c.path)"
-        }
-        if (-not $Force) {
-            $ans = Read-Host "这些文件在本地和云端都有修改，拉取将覆盖本地版本。继续? (y/N)"
-            if ($ans -ne "y") {
-                Write-Info "已取消"
-                return
+    # Download root config files
+    $success = 0; $fail = 0; $new = 0; $updated = 0
+    if ($rootFiles.Count -gt 0) {
+        # Check file conflicts
+        $conflicts = Find-FileConflicts -BaseDir $waveDir -RemoteFiles $rootFiles
+        if ($conflicts.Count -gt 0) {
+            Write-Warn "发现 $($conflicts.Count) 个文件可能有冲突:"
+            foreach ($c in $conflicts) { Write-Dim "  ⚠ $($c.path)" }
+            if (-not $Force) {
+                $ans = Read-Host "这些文件在本地和云端都有修改，拉取将覆盖本地版本。继续? (y/N)"
+                if ($ans -ne "y") { Write-Info "已取消"; return }
             }
         }
-    }
-
-    # Download
-    $success = 0; $fail = 0; $new = 0; $updated = 0
-    foreach ($rf in $remoteFiles) {
-        $rel = $rf.path
-        $localPath = Join-Path $waveDir $rel
-        $isNew = -not (Test-Path $localPath)
-        Write-Dim "  [$(if ($isNew) {'新'} else {'更'})] $rel"
-        try {
-            Download-WebDavFile -BaseUrl $baseUrl -RemotePath $rel -LocalPath $localPath -Auth $auth | Out-Null
-            $success++
-            if ($isNew) { $new++ } else { $updated++ }
-        } catch {
-            Write-Err "    失败: $_"
-            $fail++
+        foreach ($rf in $rootFiles) {
+            $rel = $rf.path; $localPath = Join-Path $waveDir $rel
+            $isNew = -not (Test-Path $localPath)
+            Write-Dim "  [$(if ($isNew) {'新'} else {'更'})] $rel"
+            try {
+                Download-WebDavFile -BaseUrl $baseUrl -RemotePath $rel -LocalPath $localPath -Auth $auth | Out-Null
+                $success++; if ($isNew) { $new++ } else { $updated++ }
+            } catch { Write-Err "    失败: $_"; $fail++ }
         }
     }
 
     # Download DB export files
-    try {
-        $exportFiles = Get-WebDavFileList -BaseUrl $baseUrl -BasePath "wave-sync-export" -Auth $auth
-        $exportFiles = $exportFiles | Where-Object { -not $_.isDir -and $_.path }
-        if ($exportFiles.Count -gt 0) {
-            $exportDir = Get-ExportDir $waveDir
-            if (-not (Test-Path $exportDir)) { New-Item -ItemType Directory -Path $exportDir -Force | Out-Null }
-            Write-Info "下载 DB workspace 导出..."
-            foreach ($ef in $exportFiles) {
-                $localPath = Join-Path $exportDir $ef.path
-                Write-Dim "  [DB] $($ef.path)"
-                try {
-                    Download-WebDavFile -BaseUrl $baseUrl -RemotePath "wave-sync-export/$($ef.path)" -LocalPath $localPath -Auth $auth | Out-Null
-                } catch {
-                    Write-Err "    DB下载失败: $_"
-                }
-            }
-            # Import to DB
-            Import-WaveDb -WaveDir $waveDir
+    if ($exportFiles.Count -gt 0) {
+        $exportDir = Get-ExportDir $waveDir
+        if (-not (Test-Path $exportDir)) { New-Item -ItemType Directory -Path $exportDir -Force | Out-Null }
+        Write-Info "下载 DB workspace 导出..."
+        foreach ($ef in $exportFiles) {
+            $localPath = Join-Path $exportDir $ef.path
+            Write-Dim "  [DB] $($ef.path)"
+            try {
+                Download-WebDavFile -BaseUrl $baseUrl -RemotePath "wave-sync-export/$($ef.path)" -LocalPath $localPath -Auth $auth | Out-Null
+            } catch { Write-Err "    DB下载失败: $_" }
         }
-    } catch {
-        Write-Dim "  (没有远程 DB 导出文件)"
+        # Import to DB
+        Import-WaveDb -WaveDir $waveDir
     }
 
     # Save manifest
