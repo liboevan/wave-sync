@@ -1,6 +1,9 @@
 config.yaml
 .wave-sync-meta.json
 .wave-sync-manifest.json
+*.zip
+debug*.ps1
+inspect_db.js
 __pycache__/
 *.pyc
 *.pyo
