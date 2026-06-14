@@ -1013,16 +1013,17 @@ function Invoke-Pull {
         }
     }
 
-    # Download DB export files
+    # Download DB export files (known filenames)
     if ($exportFiles.Count -gt 0) {
         $exportDir = Get-ExportDir $waveDir
         if (-not (Test-Path $exportDir)) { New-Item -ItemType Directory -Path $exportDir -Force | Out-Null }
         Write-Info "下载 DB workspace 导出..."
-        foreach ($ef in $exportFiles) {
-            $localPath = Join-Path $exportDir $ef.path
-            Write-Dim "  [DB] $($ef.path)"
+        $exportNames = @("block.json","client.json","layout.json","mainserver.json","tab.json","window.json","workspace.json")
+        foreach ($name in $exportNames) {
+            $localPath = Join-Path $exportDir $name
+            Write-Dim "  [DB] $name"
             try {
-                Download-WebDavFile -BaseUrl $baseUrl -RemotePath "wave-sync-export/$($ef.path)" -LocalPath $localPath -Auth $auth | Out-Null
+                Download-WebDavFile -BaseUrl $baseUrl -RemotePath "wave-sync-export/$name" -LocalPath $localPath -Auth $auth | Out-Null
             } catch { Write-Err "    DB下载失败: $_" }
         }
         # Import to DB
